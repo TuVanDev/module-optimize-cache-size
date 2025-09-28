@@ -1,33 +1,34 @@
 <?php
-declare(strict_types=1);
+
 /**
  * @copyright   Copyright (c) Vendic B.V https://vendic.nl/
  */
 
+declare(strict_types=1);
+
 namespace Vendic\OptimizeCacheSize\Plugin;
 
-use Magento\Framework\App\ScopeInterface;
 use Magento\Framework\View\DesignInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\View\Layout\ProcessorInterface;
+use Magento\Widget\Model\ResourceModel\Layout\Update\CollectionFactory;
 use Vendic\OptimizeCacheSize\Model\Config;
-use Magento\Widget\Model\ResourceModel\Layout\Update;
 use Magento\Framework\Exception\NoSuchEntityException;
-use Vendic\OptimizeCacheSize\Model\LayoutUpdateFetcher;
 
-class RemoveHandlersPlugin
+class RemoveHandlers
 {
-
     private const string PRODUCT_ID_HANDLER_STRING = 'catalog_product_view_id_';
     private const string PRODUCT_SKU_HANDLER_STRING = 'catalog_product_view_sku_';
     private const string CATEGORY_ID_HANDLER_STRING = 'catalog_category_view_id_';
 
+    private array $dbLayoutHandlers = [];
+
     public function __construct(
         private readonly Config $config,
-        private readonly LayoutUpdateFetcher $layoutUpdateFetcher,
         private readonly StoreManagerInterface $storeManager,
-        private readonly DesignInterface $design
+        private readonly DesignInterface $design,
+        private readonly CollectionFactory $layoutUpdateCollectionFactory
     ) {
     }
 
@@ -44,17 +45,11 @@ class RemoveHandlersPlugin
             return $result;
         }
 
-        $store = (string)$this->storeManager->getStore()->getId();
-        $theme = (string)$this->design->getDesignTheme()->getId();
-        $handlers = $result->getHandles();
-
-        $dbLayoutHandlers = $this->layoutUpdateFetcher->fetchDbLayoutHandlers($handlers, $theme, $store);
-
-        foreach ($handlers as $handler) {
+        foreach ($result->getHandles() as $handler) {
             if (
                 $this->config->isRemoveCategoryIdHandlers()
                 && str_contains($handler, self::CATEGORY_ID_HANDLER_STRING)
-                && !in_array($handler, $dbLayoutHandlers)
+                && !$this->hasDbLayoutUpdate($handler)
             ) {
                 $result->removeHandle($handler);
                 continue;
@@ -63,7 +58,7 @@ class RemoveHandlersPlugin
             if (
                 $this->config->isRemoveProductIdHandlers()
                 && str_contains($handler, self::PRODUCT_ID_HANDLER_STRING)
-                && !in_array($handler, $dbLayoutHandlers)
+                && !$this->hasDbLayoutUpdate($handler)
             ) {
                 $result->removeHandle($handler);
                 continue;
@@ -72,11 +67,27 @@ class RemoveHandlersPlugin
             if (
                 $this->config->isRemoveProductSkuHandlers()
                 && str_contains($handler, self::PRODUCT_SKU_HANDLER_STRING)
-                && !in_array($handler, $dbLayoutHandlers)
+                && !$this->hasDbLayoutUpdate($handler)
             ) {
                 $result->removeHandle($handler);
             }
         }
         return $result;
+    }
+
+    private function hasDbLayoutUpdate(string $handler): bool
+    {
+        $storeId = (int)$this->storeManager->getStore()->getId();
+        $themeId = (int)$this->design->getDesignTheme()->getId();
+
+        if (!isset($this->dbLayoutHandlers[$storeId][$themeId][$handler])) {
+            $updateCollection = $this->layoutUpdateCollectionFactory->create();
+            $updateCollection->addStoreFilter($storeId);
+            $updateCollection->addThemeFilter($themeId);
+            $updateCollection->addFieldToFilter('handle', $handler);
+            $this->dbLayoutHandlers[$storeId][$themeId][$handler] = $updateCollection->getSize() > 0;
+        }
+
+        return $this->dbLayoutHandlers[$storeId][$themeId][$handler];
     }
 }
