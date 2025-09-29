@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace Vendic\OptimizeCacheSize\Plugin;
 
 use Magento\Framework\View\DesignInterface;
+use Magento\Store\Model\Store;
 use Magento\Store\Model\StoreManagerInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\View\Layout\ProcessorInterface;
@@ -82,8 +83,8 @@ class RemoveHandlers
 
         if (!isset($this->dbLayoutHandlers[$storeId][$themeId][$handler])) {
             $updateCollection = $this->layoutUpdateCollectionFactory->create();
-            $updateCollection->addStoreFilter($storeId);
             $updateCollection->addThemeFilter($themeId);
+            $updateCollection->addFieldToFilter('store_id', [$storeId, Store::DEFAULT_STORE_ID]);
             $updateCollection->addFieldToFilter('handle', $handler);
             $this->dbLayoutHandlers[$storeId][$themeId][$handler] = $updateCollection->getSize() > 0;
         }
